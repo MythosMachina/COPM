@@ -1,0 +1,58 @@
+# Dependencies / builds
+node_modules/
+.next/
+out/
+coverage/
+dist/
+build/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Runtime logs / pid / temp
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.pid
+*.pid.lock
+.server-task*.pid
+
+# Local runtime/project data (must never be pushed)
+workspaces/
+docs/
+uploads/
+storage/
+data/
+tmp/
+temp/
+backups/
+
+# Local databases / dumps
+prisma/dev.db
+*.db
+*.sqlite
+*.sqlite3
+*.dmp
+*.dump
+
+# Certificates / keys / credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.kubeconfig
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

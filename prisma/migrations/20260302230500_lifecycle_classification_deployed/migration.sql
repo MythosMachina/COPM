@@ -1,0 +1,1 @@
+ALTER TYPE "LifecycleClassification" ADD VALUE IF NOT EXISTS 'DEPLOYED';

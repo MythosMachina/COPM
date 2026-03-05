@@ -1,0 +1,49 @@
+services:
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3300:3300"
+    environment:
+      DATABASE_URL: ${COPM_DATABASE_URL:?Set COPM_DATABASE_URL before docker compose up}
+      DATABASE_URL_TEST: ${COPM_DATABASE_URL_TEST:?Set COPM_DATABASE_URL_TEST before docker compose up}
+      NEXTAUTH_SECRET: ${COPM_NEXTAUTH_SECRET:?Set COPM_NEXTAUTH_SECRET before docker compose up}
+      NEXTAUTH_URL: ${COPM_NEXTAUTH_URL:?Set COPM_NEXTAUTH_URL before docker compose up}
+    command: sh -c "npm run prisma:deploy && npm run start"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${COPM_POSTGRES_USER:?Set COPM_POSTGRES_USER before docker compose up}
+      POSTGRES_PASSWORD: ${COPM_POSTGRES_PASSWORD:?Set COPM_POSTGRES_PASSWORD before docker compose up}
+      POSTGRES_DB: ${COPM_POSTGRES_DB:?Set COPM_POSTGRES_DB before docker compose up}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  postgres_test:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${COPM_POSTGRES_TEST_USER:?Set COPM_POSTGRES_TEST_USER before docker compose up}
+      POSTGRES_PASSWORD: ${COPM_POSTGRES_TEST_PASSWORD:?Set COPM_POSTGRES_TEST_PASSWORD before docker compose up}
+      POSTGRES_DB: ${COPM_POSTGRES_TEST_DB:?Set COPM_POSTGRES_TEST_DB before docker compose up}
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  pg_data:

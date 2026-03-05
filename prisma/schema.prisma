@@ -1,0 +1,364 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TaskStatus {
+  ACTIVE
+  DONE
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum AgentRunStatus {
+  QUEUED
+  RUNNING
+  WAITING_INPUT
+  DONE
+  FAILED
+  CANCELED
+}
+
+enum ProvisionStatus {
+  DISABLED
+  PENDING
+  RUNNING
+  READY
+  FAILED
+}
+
+enum LifecycleRunMode {
+  STEP
+  BATCH
+}
+
+enum LifecycleRunStatus {
+  DRAFT
+  READY
+  RUNNING
+  BLOCKED
+  VERIFIED
+  DEPLOYED
+  FAILED
+  CANCELED
+  ROLLED_BACK
+}
+
+enum LifecycleClassification {
+  BIRTH
+  CHANGE
+  FIX
+  ITERATE
+  TEARDOWN
+  DEPLOYED
+}
+
+enum LifecycleModuleType {
+  TECHSTACK
+  FEATURE
+  CHECK
+  DOMAIN
+  DEPLOY
+  CHANGE
+  FIX
+  ITERATE
+  TEARDOWN
+  CUSTOM
+}
+
+enum LifecycleModuleStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  BLOCKED
+  SKIPPED
+}
+
+enum ModuleCompletionPolicy {
+  PAUSE_ALWAYS
+  PAUSE_ON_RISK
+  CONTINUE_AUTOMATIC
+}
+
+enum LifecycleRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(USER)
+  projectLimit Int      @default(2)
+  githubEnabled           Boolean  @default(false)
+  githubEncryptedApiToken String?
+  githubTokenHint         String?
+  githubUsername          String?
+  githubEmail             String?
+  githubLastCheckedAt     DateTime?
+  githubLastHealthStatus  String?
+  githubLastHealthMessage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  apiKeys       ApiKey[]
+  projects      Project[]
+  domainAccess  UserDomNexDomainAccess[]
+}
+
+model ApiKey {
+  id              String    @id @default(uuid())
+  name            String
+  keyHash         String
+  keyPrefix       String
+  createdByUserId String
+  projectId       String?
+  createdAt       DateTime  @default(now())
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+
+  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([keyPrefix])
+  @@index([createdByUserId])
+  @@index([projectId])
+  @@index([revokedAt])
+}
+
+model Project {
+  id             String          @id @default(uuid())
+  visualId       String          @unique @default(dbgenerated("'PRJ-' || lpad(nextval('project_visual_id_seq'::regclass)::text, 4, '0')"))
+  name           String
+  target         String
+  createdByUserId String
+  autonomousAgentEnabled Boolean @default(false)
+  autoProvisionDomain Boolean @default(false)
+  provisionStatus ProvisionStatus @default(DISABLED)
+  provisionError  String?
+  fqdn            String?
+  domnexHostId    String?
+  provisionUpstreamUrl String?
+  provisionInsecureTls Boolean @default(false)
+  provisionHaEnabled Boolean @default(false)
+  provisionedAt   DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  createdBy      User            @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  tasks          Task[]
+  documentation  Documentation[]
+  apiKeys        ApiKey[]
+  agentRuns      AgentRun[]
+  lifecycleRuns  LifecycleRun[]
+
+  @@index([createdByUserId])
+}
+
+model UserDomNexDomainAccess {
+  id        String   @id @default(uuid())
+  userId    String
+  domain    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, domain])
+  @@index([domain])
+}
+
+model LifecycleRun {
+  id             String                  @id @default(uuid())
+  projectId      String
+  title          String
+  mode           LifecycleRunMode        @default(STEP)
+  status         LifecycleRunStatus      @default(DRAFT)
+  classification LifecycleClassification @default(BIRTH)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  project     Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  modules     LifecycleModule[]
+  transitions LifecycleTransition[]
+  evidences   LifecycleEvidence[]
+
+  @@index([projectId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model LifecycleModule {
+  id               String                 @id @default(uuid())
+  runId            String
+  moduleOrder      Int
+  moduleType       LifecycleModuleType
+  title            String
+  description      String
+  config           Json?
+  expectedState    String
+  actualState      String?
+  gateRequired     Boolean                @default(false)
+  completionPolicy ModuleCompletionPolicy @default(PAUSE_ON_RISK)
+  riskLevel        LifecycleRiskLevel     @default(MEDIUM)
+  status           LifecycleModuleStatus  @default(PENDING)
+  lastError        String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  startedAt        DateTime?
+  completedAt      DateTime?
+
+  run       LifecycleRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  evidences LifecycleEvidence[]
+
+  @@index([runId])
+  @@index([status])
+  @@unique([runId, moduleOrder])
+}
+
+model LifecycleTransition {
+  id         String             @id @default(uuid())
+  runId      String
+  fromStatus LifecycleRunStatus
+  toStatus   LifecycleRunStatus
+  reason     String
+  metadata   Json?
+  createdAt  DateTime           @default(now())
+
+  run LifecycleRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([createdAt])
+}
+
+model LifecycleEvidence {
+  id        String   @id @default(uuid())
+  runId     String
+  moduleId  String?
+  kind      String
+  summary   String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  run    LifecycleRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  module LifecycleModule? @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([moduleId])
+  @@index([createdAt])
+}
+
+model AgentRun {
+  id              String         @id @default(uuid())
+  projectId       String
+  status          AgentRunStatus @default(QUEUED)
+  trigger         String         @default("AUTO")
+  workspacePath   String
+  command         String
+  promptPath      String
+  pid             Int?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  exitCode        Int?
+  failureReason   String?
+  heartbeatAt     DateTime?
+  summary         String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Documentation {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  content   String
+  version   Int
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([projectId, name])
+}
+
+model Task {
+  id            String     @id @default(uuid())
+  visualId      String     @unique @default(dbgenerated("'TSK-' || lpad(nextval('task_visual_id_seq'::regclass)::text, 5, '0')"))
+  projectId     String
+  title         String
+  executionOrder Int
+  status        TaskStatus @default(ACTIVE)
+  requiresOperatorFeedback Boolean @default(false)
+  istState      String
+  sollState     String
+  technicalPlan String
+  riskImpact    String
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@index([projectId, executionOrder])
+}
+
+model SystemPreset {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DomNexAdapterConfig {
+  id                String   @id @default(uuid())
+  enabled           Boolean  @default(false)
+  baseUrl           String
+  defaultDomain     String?
+  encryptedApiToken String?
+  tokenHint         String?
+  lastCheckedAt     DateTime?
+  lastHealthStatus  String?
+  lastHealthMessage String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model DomNexApexDomain {
+  id        String   @id @default(uuid())
+  domain    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GitHubAdapterConfig {
+  id                String   @id @default(uuid())
+  enabled           Boolean  @default(false)
+  encryptedApiToken String?
+  tokenHint         String?
+  username          String?
+  email             String?
+  lastCheckedAt     DateTime?
+  lastHealthStatus  String?
+  lastHealthMessage String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
