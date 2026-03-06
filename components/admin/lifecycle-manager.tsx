@@ -20,6 +20,7 @@ type AgentRunState = {
   runId: string | null;
   updatedAt: string | null;
   failureReason: string | null;
+  codexStatusSnapshot: string[];
 };
 
 type MaintenanceDraft = {
@@ -191,6 +192,28 @@ function detectTechstackPresetId(run: LifecycleRunDetailDTO | null): string {
   return techstackPresets.some((preset) => preset.id === presetId) ? presetId : techstackPresets[0].id;
 }
 
+function extractCodexStatusSnapshot(summary: string | null | undefined): string[] {
+  if (!summary) {
+    return [];
+  }
+  const lines = summary.replace(/\r/g, "").split("\n");
+  const startIndex = lines.findIndex((line) => line.includes("[COPM] Codex status snapshot at run start"));
+  if (startIndex === -1) {
+    return [];
+  }
+  const snapshotLines: string[] = [];
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = lines[index].trimEnd();
+    if (index > startIndex && line.startsWith("[COPM]") && !line.startsWith("[COPM][CODEX_STATUS]")) {
+      break;
+    }
+    if (line.startsWith("[COPM] Codex status snapshot at run start") || line.startsWith("[COPM][CODEX_STATUS]")) {
+      snapshotLines.push(line);
+    }
+  }
+  return snapshotLines.slice(0, 20);
+}
+
 function buildModulesDraft(run: LifecycleRunDetailDTO | null, fallbackPresetId: string): unknown[] {
   if (!run || run.modules.length === 0) {
     return withTechstackPreset(fallbackPresetId);
@@ -248,6 +271,7 @@ export function LifecycleManager({
     runId: null,
     updatedAt: null,
     failureReason: null,
+    codexStatusSnapshot: [],
   });
   const [agentStateBusy, setAgentStateBusy] = useState(false);
 
@@ -358,6 +382,7 @@ export function LifecycleManager({
             status: AgentRunState["status"];
             updatedAt: string;
             failureReason: string | null;
+            summary: string | null;
           }>;
         };
         if (!response.ok || !payload.success) {
@@ -373,6 +398,7 @@ export function LifecycleManager({
             runId: null,
             updatedAt: null,
             failureReason: null,
+            codexStatusSnapshot: [],
           });
           return;
         }
@@ -381,6 +407,7 @@ export function LifecycleManager({
           runId: latest.id,
           updatedAt: latest.updatedAt,
           failureReason: latest.failureReason,
+          codexStatusSnapshot: extractCodexStatusSnapshot(latest.summary),
         });
       } catch {
         // Keep existing state on polling errors.
@@ -895,6 +922,14 @@ export function LifecycleManager({
               <p className="ops-muted">No agent run recorded.</p>
             )}
             {agentState.failureReason ? <p className="error">{agentState.failureReason}</p> : null}
+            <div className="detail-box">
+              <p className="label">Codex Runtime Snapshot</p>
+              {agentState.codexStatusSnapshot.length === 0 ? (
+                <p className="ops-muted">No snapshot available yet.</p>
+              ) : (
+                <pre className="agent-log-preview">{agentState.codexStatusSnapshot.join("\n")}</pre>
+              )}
+            </div>
             <button type="button" onClick={onRunAgent} disabled={controlsDisabled || runAgentBusy}>
               {runAgentBusy ? "Triggering..." : "Run Agent"}
             </button>

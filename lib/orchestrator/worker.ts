@@ -381,6 +381,56 @@ async function runCommand(
   });
 }
 
+async function captureCodexStatusSnapshot(
+  command: string,
+  cwd: string,
+  timeoutMs = 5000,
+): Promise<{ code: number; timedOut: boolean; stdout: string; stderr: string }> {
+  return await new Promise((resolve) => {
+    const child = spawn(command, ["status"], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let closed = false;
+    let timedOut = false;
+
+    const finish = (code: number | null) => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      clearTimeout(timer);
+      resolve({
+        code: code ?? 1,
+        timedOut,
+        stdout,
+        stderr,
+      });
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // Ignore kill errors.
+      }
+      setTimeout(() => finish(124), 200).unref();
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("close", (code) => finish(code));
+    child.on("error", (error) => {
+      stderr = `${stderr}\n${error.message}`.trim();
+      finish(1);
+    });
+  });
+}
+
 async function ensureWorkspaceRuntimePaths(workspaceRoot: string, visualId: string): Promise<{ runtimeDir: string }> {
   const runtimeDir = path.join(workspaceRoot, ".copm-runtime", visualId);
   await fs.mkdir(runtimeDir, { recursive: true });
@@ -647,9 +697,34 @@ export class CopmAgentWorker {
         [`[RUN_START] ${new Date().toISOString()} runId=${run.id} trigger=${trigger}`, "[RUN_OUTPUT]"].join("\n") + "\n",
         "utf8",
       );
+      const outputLines: string[] = [];
       const checkpointSummary = await checkpointWorkspaceIfGitRepo(workspacePath, run.id);
       if (checkpointSummary) {
         await appendRunStream(runStreamPath, [`[WORKSPACE_GUARD] ${checkpointSummary}`]);
+        outputLines.push(`[COPM] ${checkpointSummary}`);
+      }
+
+      const codexStatus = await captureCodexStatusSnapshot(this.config.codexCommand, workspacePath, 5000);
+      const codexStatusHeader = `[COPM] Codex status snapshot at run start (exit=${codexStatus.code}, timeout=${codexStatus.timedOut ? "yes" : "no"})`;
+      const codexStatusLines = codexStatus.stdout
+        .replace(/\r/g, "")
+        .split("\n")
+        .map((line) => sanitizeTerminalLine(line).trim())
+        .filter(Boolean)
+        .slice(0, 24)
+        .map((line) => `[COPM][CODEX_STATUS] ${line}`);
+      const codexStatusStderr = sanitizeTerminalLine(codexStatus.stderr).trim();
+      const codexStatusStreamLines = [codexStatusHeader, ...codexStatusLines];
+      if (codexStatusStderr) {
+        codexStatusStreamLines.push(`[COPM][CODEX_STATUS][stderr] ${codexStatusStderr.slice(0, 400)}`);
+      }
+      if (codexStatusLines.length === 0 && !codexStatusStderr) {
+        codexStatusStreamLines.push("[COPM][CODEX_STATUS] No output captured.");
+      }
+      await appendRunStream(runStreamPath, codexStatusStreamLines);
+      outputLines.push(codexStatusHeader, ...codexStatusLines);
+      if (codexStatusStderr) {
+        outputLines.push(`[COPM][CODEX_STATUS][stderr] ${codexStatusStderr.slice(0, 400)}`);
       }
 
       const persistRunReport = async (input: {
@@ -761,7 +836,6 @@ export class CopmAgentWorker {
         void heartbeatAgentRun(run.id);
       }, 5000);
 
-      const outputLines: string[] = [];
       let waitingForInput = false;
       const seenQuestionKeys = new Set<string>();
       const runTimeout = setTimeout(() => {

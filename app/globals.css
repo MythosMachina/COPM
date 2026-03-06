@@ -657,6 +657,20 @@ button.danger {
   white-space: pre-wrap;
 }
 
+.agent-log-preview {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem;
+  border: 1px solid #27405f;
+  border-radius: 4px;
+  background: #0c1a2d;
+  color: #d7e6fd;
+  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-size: 0.78rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  max-height: 180px;
+}
+
 .agent-chat-wrapper {
   display: grid;
   gap: 0.6rem;
