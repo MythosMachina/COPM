@@ -582,7 +582,13 @@ export function LifecycleManager({
           status: "PENDING",
           evidence: {
             kind: "OPERATOR_REOPEN",
-            summary: "Module reopened by operator",
+            summary: "Module reopened by operator with escalation review required",
+            details: {
+              escalationLevel: "HIGH",
+              instruction:
+                "Module was reopened. Re-validate implementation depth, root-cause and regression coverage before completion.",
+              source: "COPM_ADMIN_UI",
+            },
           },
         }),
       });

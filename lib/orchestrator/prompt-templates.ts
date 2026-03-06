@@ -83,6 +83,15 @@ function buildCurrentModuleSection(module: LifecycleModuleRef | null): string[] 
   ];
 }
 
+function moduleHasReopenEscalation(run: LifecycleRunDetailRef, module: LifecycleModuleRef | null): boolean {
+  if (!module) {
+    return false;
+  }
+  return run.evidences.some(
+    (entry) => entry.moduleId === module.id && entry.kind === "OPERATOR_REOPEN",
+  );
+}
+
 function buildAllModulesSection(run: LifecycleRunDetailRef): string[] {
   return [...run.modules]
     .sort((a, b) => a.moduleOrder - b.moduleOrder)
@@ -109,6 +118,7 @@ function buildStateSection(run: LifecycleRunDetailRef): string[] {
 
 export function buildLifecycleSystemPrompt(run: LifecycleRunDetailRef): string {
   const currentModule = pickCurrentModule(run.modules);
+  const reopenEscalation = moduleHasReopenEscalation(run, currentModule);
   return [
     "Lifecycle Prompt Template",
     "=========================",
@@ -133,6 +143,17 @@ export function buildLifecycleSystemPrompt(run: LifecycleRunDetailRef): string {
     "",
     "Current Module Layer:",
     ...formatList(buildCurrentModuleSection(currentModule)),
+    ...(reopenEscalation
+      ? [
+          "",
+          "Reopen Escalation Layer:",
+          ...formatList([
+            "This module was reopened by operator and is under escalation review.",
+            "Do not close module with superficial fixes.",
+            "Before marking COMPLETED, provide stronger verification depth: root-cause check, regression check, and explicit evidence sync.",
+          ]),
+        ]
+      : []),
     "",
     "Runtime State Layer:",
     ...formatList(buildStateSection(run)),
