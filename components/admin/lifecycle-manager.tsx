@@ -369,6 +369,29 @@ export function LifecycleManager({
   useEffect(() => {
     let canceled = false;
 
+    async function fetchSnapshot(runId: string): Promise<string[]> {
+      return await new Promise<string[]>((resolve) => {
+        const source = new EventSource(`/api/v1/admin/agent/runs/${runId}/stream`);
+        const timer = window.setTimeout(() => {
+          source.close();
+          resolve([]);
+        }, 2200);
+
+        source.addEventListener("init", (event) => {
+          const payload = JSON.parse((event as MessageEvent).data) as { tail?: string };
+          window.clearTimeout(timer);
+          source.close();
+          resolve(extractCodexStatusSnapshot(payload.tail ?? ""));
+        });
+
+        source.onerror = () => {
+          window.clearTimeout(timer);
+          source.close();
+          resolve([]);
+        };
+      });
+    }
+
     async function fetchAgentState() {
       try {
         setAgentStateBusy(true);
@@ -402,12 +425,15 @@ export function LifecycleManager({
           });
           return;
         }
+        const summarySnapshot = extractCodexStatusSnapshot(latest.summary);
+        const liveSnapshot =
+          summarySnapshot.length > 0 ? summarySnapshot : await fetchSnapshot(latest.id);
         setAgentState({
           status: latest.status,
           runId: latest.id,
           updatedAt: latest.updatedAt,
           failureReason: latest.failureReason,
-          codexStatusSnapshot: extractCodexStatusSnapshot(latest.summary),
+          codexStatusSnapshot: liveSnapshot,
         });
       } catch {
         // Keep existing state on polling errors.
