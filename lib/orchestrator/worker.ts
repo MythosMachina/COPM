@@ -510,6 +510,10 @@ export class CopmAgentWorker {
 
     const latestRun = await getLatestAgentRun(projectId);
     const lifecycleRuns = await this.client.listLifecycleRuns(projectId);
+    const hasDraftLifecycle = lifecycleRuns.some((run) => run.status === "DRAFT");
+    const hasRunnableLifecycle = lifecycleRuns.some(
+      (run) => run.status === "RUNNING" || run.status === "READY" || run.status === "BLOCKED",
+    );
     const hasActiveLifecycle = lifecycleRuns.some((run) =>
       run.status === "RUNNING" || run.status === "READY" || run.status === "BLOCKED" || run.status === "DRAFT",
     );
@@ -524,8 +528,13 @@ export class CopmAgentWorker {
       ? Date.parse(projectUpdatedAt) > Date.parse(latestRun.updatedAt)
       : false;
     const isManualTrigger = trigger !== "AUTO";
+    if (!isManualTrigger && hasDraftLifecycle && latestRun?.status === "DONE") {
+      // Prephase completed successfully. Wait for operator action (Start Build / new edits)
+      // instead of looping autonomous runs against unchanged DRAFT modules.
+      return;
+    }
     const shouldContinueActiveLifecycle = Boolean(
-      hasActiveLifecycle && latestRun && latestRun.status === "DONE",
+      hasRunnableLifecycle && latestRun && latestRun.status === "DONE",
     );
     const shouldStart =
       isManualTrigger ||
