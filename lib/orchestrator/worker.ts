@@ -945,7 +945,8 @@ export class CopmAgentWorker {
             ? hasActiveLifecycleModules((await this.client.getLifecycleRun(projectId, activeLifecycleRef.id)).modules)
             : false;
 
-          if (!hasDocumentation || hasActiveModules) {
+          const shouldBlockForActiveModules = phase === "BUILD" && hasActiveModules;
+          if (!hasDocumentation || shouldBlockForActiveModules) {
             const guardReason = !hasDocumentation
               ? "Guard rail blocked DONE: run documentation persistence missing."
               : `${GUARD_RETRY_PREFIX} active lifecycle modules still present`;
